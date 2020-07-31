@@ -1,3 +1,142 @@
+## [2.3.1](https://github.com/bazelbuild/rules_nodejs/compare/2.3.0...2.3.1) (2020-11-24)
+
+
+### Bug Fixes
+
+* **builtin:** make linker deterministic when resolving from manifest & fix link_workspace_root with no runfiles ([8adebda](https://github.com/bazelbuild/rules_nodejs/commit/8adebda))
+* npm_package.pack on Windows should not generate undefined.tgz ([76c3f51](https://github.com/bazelbuild/rules_nodejs/commit/76c3f51))
+
+
+### Performance Improvements
+
+* **cypress:** pack cypress runfiles into a single tar ([185c632](https://github.com/bazelbuild/rules_nodejs/commit/185c632))
+
+
+
+# [2.3.0](https://github.com/bazelbuild/rules_nodejs/compare/2.2.2...2.3.0) (2020-11-10)
+
+
+### Bug Fixes
+
+* **typescript:** specify rootDir as absolute path ([86bef24](https://github.com/bazelbuild/rules_nodejs/commit/86bef24))
+* npm_package.pack should work in windows os ([bc36519](https://github.com/bazelbuild/rules_nodejs/commit/bc36519))
+* **builtin:** give a longer timeout for _create_build_files ([e72c145](https://github.com/bazelbuild/rules_nodejs/commit/e72c145)), closes [#2231](https://github.com/bazelbuild/rules_nodejs/issues/2231)
+* **exmaples/nestjs:** add module_name field in ts_library ([700374a](https://github.com/bazelbuild/rules_nodejs/commit/700374a))
+* **typescript:** don't include _valid_options marker file in outs ([6305db3](https://github.com/bazelbuild/rules_nodejs/commit/6305db3)), closes [#2078](https://github.com/bazelbuild/rules_nodejs/issues/2078)
+
+
+### Features
+
+* **cypress:** remove browiserify preprocessor ([1eeabbe](https://github.com/bazelbuild/rules_nodejs/commit/1eeabbe))
+* **examples:** adds example for running jest with typescript ([#2245](https://github.com/bazelbuild/rules_nodejs/issues/2245)) ([3c11800](https://github.com/bazelbuild/rules_nodejs/commit/3c11800))
+* **node_repositories:** Added auth option for downloading nodejs and yarn ([51de4e0](https://github.com/bazelbuild/rules_nodejs/commit/51de4e0))
+* **typescript:** add allow_js support to ts_project ([12571ee](https://github.com/bazelbuild/rules_nodejs/commit/12571ee))
+* **typescript:** worker mode for ts_project ([#2136](https://github.com/bazelbuild/rules_nodejs/issues/2136)) ([9663b85](https://github.com/bazelbuild/rules_nodejs/commit/9663b85))
+
+
+
+## [2.2.2](https://github.com/bazelbuild/rules_nodejs/compare/2.2.1...2.2.2) (2020-10-17)
+
+
+### Bug Fixes
+
+* **builtin:** js_library supports --output_groups=types ([c060a22](https://github.com/bazelbuild/rules_nodejs/commit/c060a22))
+* **example:** remove compression dependencies ([75bf720](https://github.com/bazelbuild/rules_nodejs/commit/75bf720))
+* **example:** remove index.html from prodapp srcs ([c7be89b](https://github.com/bazelbuild/rules_nodejs/commit/c7be89b))
+* **example:** remove server side compression ([6d5aafb](https://github.com/bazelbuild/rules_nodejs/commit/6d5aafb))
+* **example:** add docstring to ngsw_config rule ([481fa21](https://github.com/bazelbuild/rules_nodejs/commit/481fa21))
+
+
+### Features
+
+* **example:** add full pwa support ([4d5b9c7](https://github.com/bazelbuild/rules_nodejs/commit/4d5b9c7))
+* **example:** service worker update handling ([bb66235](https://github.com/bazelbuild/rules_nodejs/commit/bb66235))
+* **karma:** use Trusted Types policy when loading scripts for Karma ([af9feb4](https://github.com/bazelbuild/rules_nodejs/commit/af9feb4))
+
+
+
+## [2.2.1](https://github.com/bazelbuild/rules_nodejs/compare/2.2.0...2.2.1) (2020-10-07)
+
+
+### Bug Fixes
+
+* **builtin:** js_library: correctly propagate DeclarationInfos ([41f8719](https://github.com/bazelbuild/rules_nodejs/commit/41f8719))
+* **examples:** prevent ibazel EOF ([96aea69](https://github.com/bazelbuild/rules_nodejs/commit/96aea69)), closes [#2143](https://github.com/bazelbuild/rules_nodejs/issues/2143)
+* **karma:** allow custom browsers to specify args (fixes [#595](https://github.com/bazelbuild/rules_nodejs/issues/595)) ([5a58030](https://github.com/bazelbuild/rules_nodejs/commit/5a58030))
+* don't glob yarn or node files when using vendored_node or vendored_yarn ([f5ef64f](https://github.com/bazelbuild/rules_nodejs/commit/f5ef64f))
+
+
+### Features
+
+* add strict_visibility to npm_install / yarn_install rules ([#2193](https://github.com/bazelbuild/rules_nodejs/issues/2193)) ([18c6e80](https://github.com/bazelbuild/rules_nodejs/commit/18c6e80)), closes [#2110](https://github.com/bazelbuild/rules_nodejs/issues/2110)
+* update nodejs versions ([#2207](https://github.com/bazelbuild/rules_nodejs/issues/2207)) ([5478dab](https://github.com/bazelbuild/rules_nodejs/commit/5478dab))
+
+
+
+# [2.2.0](https://github.com/bazelbuild/rules_nodejs/compare/2.1.0...2.2.0) (2020-09-10)
+
+
+### Bug Fixes
+
+* **builtin:** don't set --preserve-symlinks-main by default ([#2176](https://github.com/bazelbuild/rules_nodejs/issues/2176)) ([df18c61](https://github.com/bazelbuild/rules_nodejs/commit/df18c61))
+* **builtin:** fix bazel coverage masking test failures ([3d0d1f7](https://github.com/bazelbuild/rules_nodejs/commit/3d0d1f7))
+* **rollup:** allow config files to override default onwarn method ([0b80f6a](https://github.com/bazelbuild/rules_nodejs/commit/0b80f6a)), closes [#2084](https://github.com/bazelbuild/rules_nodejs/issues/2084)
+
+
+### Features
+
+* add link_workspace_root to nodejs_binary, npm_package_bin, rollup_bundle, terser_minified, ts_project ([4dcb37f](https://github.com/bazelbuild/rules_nodejs/commit/4dcb37f))
+* link_workspace_root not needed in terser_minified ([c80b816](https://github.com/bazelbuild/rules_nodejs/commit/c80b816))
+* promote js_library to public API ([1e357fd](https://github.com/bazelbuild/rules_nodejs/commit/1e357fd)), closes [#149](https://github.com/bazelbuild/rules_nodejs/issues/149) [#1771](https://github.com/bazelbuild/rules_nodejs/issues/1771)
+
+
+
+# [2.1.0](https://github.com/bazelbuild/rules_nodejs/compare/2.0.3...2.1.0) (2020-09-07)
+
+
+### Bug Fixes
+
+* use golden_file_test instead ([1ef6704](https://github.com/bazelbuild/rules_nodejs/commit/1ef6704))
+* **typescript:** add the tsBuildInfoFile option to ts_project ([#2138](https://github.com/bazelbuild/rules_nodejs/issues/2138)) ([16def64](https://github.com/bazelbuild/rules_nodejs/commit/16def64)), closes [#2137](https://github.com/bazelbuild/rules_nodejs/issues/2137)
+
+
+### Features
+
+* **builtin:** accept any stamp vars in pkg_npm ([01bfe4d](https://github.com/bazelbuild/rules_nodejs/commit/01bfe4d)), closes [#1694](https://github.com/bazelbuild/rules_nodejs/issues/1694)
+* **builtin:** support for substitutions ([8a3f9b0](https://github.com/bazelbuild/rules_nodejs/commit/8a3f9b0))
+* **typescript:** generate tsconfig.json for ts_project ([#2130](https://github.com/bazelbuild/rules_nodejs/issues/2130)) ([09ec233](https://github.com/bazelbuild/rules_nodejs/commit/09ec233)), closes [#2058](https://github.com/bazelbuild/rules_nodejs/issues/2058)
+
+
+
+## [2.0.3](https://github.com/bazelbuild/rules_nodejs/compare/2.0.2...2.0.3) (2020-08-18)
+
+
+### Bug Fixes
+
+* **examples:** use ./ prefix on babel config file ([374f56f](https://github.com/bazelbuild/rules_nodejs/commit/374f56f))
+* **typescript:** only expect .js outs for .tsx? srcs ([#2118](https://github.com/bazelbuild/rules_nodejs/issues/2118)) ([83688a1](https://github.com/bazelbuild/rules_nodejs/commit/83688a1)), closes [#2115](https://github.com/bazelbuild/rules_nodejs/issues/2115)
+* **typescript:** produce .d.ts as default output rather than empty ([#2117](https://github.com/bazelbuild/rules_nodejs/issues/2117)) ([3d885e8](https://github.com/bazelbuild/rules_nodejs/commit/3d885e8)), closes [#2116](https://github.com/bazelbuild/rules_nodejs/issues/2116)
+
+
+### Features
+
+* **builtin:** new js_library rule ([#2109](https://github.com/bazelbuild/rules_nodejs/issues/2109)) ([4fe1a17](https://github.com/bazelbuild/rules_nodejs/commit/4fe1a17))
+* **example:** add targets in angular_bazel_architect for production serve and build ([746a6f8](https://github.com/bazelbuild/rules_nodejs/commit/746a6f8))
+
+
+
+## [2.0.2](https://github.com/bazelbuild/rules_nodejs/compare/2.0.1...2.0.2) (2020-08-10)
+
+
+### Bug Fixes
+
+* **cypress:** allow for async cypress plugins ([4fd4653](https://github.com/bazelbuild/rules_nodejs/commit/4fd4653))
+* coverage ([#2100](https://github.com/bazelbuild/rules_nodejs/issues/2100)) ([e5fc274](https://github.com/bazelbuild/rules_nodejs/commit/e5fc274))
+* remove duplicate Importing ([23f80cf](https://github.com/bazelbuild/rules_nodejs/commit/23f80cf))
+* test file pattern ([#2089](https://github.com/bazelbuild/rules_nodejs/issues/2089)) ([857471e](https://github.com/bazelbuild/rules_nodejs/commit/857471e))
+
+
+
 ## [2.0.1](https://github.com/bazelbuild/rules_nodejs/compare/2.0.0...2.0.1) (2020-07-24)
 
 

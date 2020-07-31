@@ -130,6 +130,7 @@ else
     *)
       case "${unameArch}" in
         aarch64*) readonly node_toolchain="nodejs_linux_arm64/bin/nodejs/bin/node" ;;
+        s390x*) readonly node_toolchain="nodejs_linux_s390x/bin/nodejs/bin/node" ;;
         *) readonly node_toolchain="nodejs_linux_amd64/bin/nodejs/bin/node" ;;
       esac
       ;;
@@ -148,14 +149,18 @@ fi
 
 # Export the location of the runfiles helpers script
 export BAZEL_NODE_RUNFILES_HELPER=$(rlocation "TEMPLATED_runfiles_helper_script")
-if [[ "${BAZEL_NODE_RUNFILES_HELPER}" != /* ]] && [[ ! "${BAZEL_NODE_RUNFILES_HELPER}" =~ ^[A-Z]:[\\/] ]]; then
+# Paths can be with lower and upper case on windows because of the msys64 package in the powershell
+# https://regex101.com/r/c0Gjn8/1/
+if [[ "${BAZEL_NODE_RUNFILES_HELPER}" != /* ]] && [[ ! "${BAZEL_NODE_RUNFILES_HELPER}" =~ ^[A-Za-z]:[\/\\] ]]; then
   export BAZEL_NODE_RUNFILES_HELPER=$(pwd)/${BAZEL_NODE_RUNFILES_HELPER}
 fi
 
 # Export the location of the require patch script as it can be used to bootstrap
 # node require patch if needed
 export BAZEL_NODE_PATCH_REQUIRE=$(rlocation "TEMPLATED_require_patch_script")
-if [[ "${BAZEL_NODE_PATCH_REQUIRE}" != /* ]] && [[ ! "${BAZEL_NODE_PATCH_REQUIRE}" =~ ^[A-Z]:[\\/] ]]; then
+# Paths can be with lower and upper case on windows because of the msys64 package in the powershell
+# https://regex101.com/r/c0Gjn8/1/
+if [[ "${BAZEL_NODE_PATCH_REQUIRE}" != /* ]] && [[ ! "${BAZEL_NODE_PATCH_REQUIRE}" =~ ^[A-Za-z]:[\/\\] ]]; then
   export BAZEL_NODE_PATCH_REQUIRE=$(pwd)/${BAZEL_NODE_PATCH_REQUIRE}
 fi
 
@@ -331,6 +336,12 @@ readonly child=$!
 trap _term SIGTERM
 trap _int SIGINT
 wait "${child}"
+# Remove trap after first signal has been receieved and wait for child to exit
+# (first wait returns immediatel if SIGTERM is received while waiting). Second
+# wait is a no-op if child has already terminated.
+trap - SIGTERM SIGINT
+wait "${child}"
+
 RESULT="$?"
 set -e
 
@@ -352,6 +363,15 @@ if [ "${EXPECTED_EXIT_CODE}" != "0" ]; then
   fi
 fi
 
+# Do not collect coverage for failed tests
+if [ ${RESULT} -ne 0 ]; then
+  if [[ -n "${EXIT_CODE_CAPTURE}" ]]; then
+    exit 0
+  else
+    exit ${RESULT}
+  fi
+fi
+
 # Post process the coverage information after the process has exited
 if [[ -n "${COVERAGE_DIR:-}" ]]; then
   if [[ -n "${VERBOSE_LOGS:-}" ]]; then
@@ -362,12 +382,12 @@ if [[ -n "${COVERAGE_DIR:-}" ]]; then
   fi
 
   set +e
-  "${node}" "${lcov_merger_script}" --coverage_dir="${COVERAGE_DIR}" --output_file="${COVERAGE_OUTPUT_FILE}" --source_file_manifest="${COVERAGE_MANIFEST}"
+  "${node}" ${LAUNCHER_NODE_OPTIONS[@]+"${LAUNCHER_NODE_OPTIONS[@]}"} "${lcov_merger_script}" --coverage_dir="${COVERAGE_DIR}" --output_file="${COVERAGE_OUTPUT_FILE}" --source_file_manifest="${COVERAGE_MANIFEST}"
   RESULT="$?"
   set -e
 
-  if [ ${RESULT} -ne 0 ]; then
-    exit ${RESULT}
+  if [[ -n "${EXIT_CODE_CAPTURE}" ]]; then
+    echo "${RESULT}" > "${EXIT_CODE_CAPTURE}"
   fi
 fi
 

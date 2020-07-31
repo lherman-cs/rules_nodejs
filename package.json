@@ -1,7 +1,7 @@
 {
     "name": "@bazel/javascript",
     "description": "Build JavaScript with Bazel",
-    "version": "2.0.1",
+    "version": "2.3.1",
     "keywords": [
         "javascript",
         "bazel"
@@ -10,7 +10,7 @@
     "repository": "https://github.com/bazelbuild/rules_nodejs",
     "license": "Apache-2.0",
     "engines": {
-        "node": ">=12.0.0 < 13",
+        "node": ">=12 <=14",
         "yarn": ">=1.13.0"
     },
     "devDependencies": {
@@ -73,11 +73,11 @@
         "protobufjs": "6.8.8",
         "protractor": "^5.4.2",
         "requirejs": "2.3.6",
-        "rollup": "1.3.1",
-        "rollup-plugin-amd": "3.0.0",
-        "rollup-plugin-commonjs": "9.3.4",
-        "rollup-plugin-json": "4.0.0",
-        "rollup-plugin-node-resolve": "4.2.4",
+        "rollup": "2.3.4",
+        "rollup-plugin-amd": "4.0.0",
+        "@rollup/plugin-commonjs": "14.0.0",
+        "@rollup/plugin-json": "4.1.0",
+        "@rollup/plugin-node-resolve": "8.4.0",
         "rxjs": "^6.5.2",
         "semver": "5.6.0",
         "shelljs": "0.8.3",
@@ -125,9 +125,10 @@
         "// See comment in .bazelrc": "",
         "bazel:update-deleted-packages": "sed -i.bak \"/--deleted_packages/s#=.*#=$(find {examples,e2e}/*/* \\( -name BUILD -or -name BUILD.bazel \\) | xargs -n 1 dirname | paste -sd, -)#\" .bazelrc && rm .bazelrc.bak",
         "update-codeowners": "./scripts/update_codeowners.sh",
+        "update-nodejs-versions": "node ./scripts/update-nodejs-versions.js > internal/node/node_versions.bzl",
         "format": "git-clang-format",
         "format-all": "clang-format --glob='{internal/**/,examples/**/}*.{js,ts}' -i",
-        "stardoc": "bazel build //docs && cp -f dist/bin/docs/*.md docs",
+        "stardoc": "bazel build --noincompatible_strict_action_env //docs && cp -f dist/bin/docs/*.md ./docs && cp -f dist/bin/docs/docs-out/*.html ./docs && cp -f dist/bin/docs/docs-out/css/*.css ./docs/css",
         "version": "conventional-changelog -p angular -i CHANGELOG.md -s && node ./scripts/on-version.js && bazel build //:release && node ./scripts/on-release.js && git stage version.bzl docs/install.md packages/create/index.js README.md CHANGELOG.md e2e/*/WORKSPACE examples/*/WORKSPACE",
         "postinstall": "patch-package && node internal/npm_install/test/postinstall.js"
     },

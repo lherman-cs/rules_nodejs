@@ -29,7 +29,6 @@ KARMA_PEER_DEPS = [
     "@npm//karma-requirejs",
     "@npm//karma-sourcemap-loader",
     "@npm//requirejs",
-    "@npm//tmp",
 ]
 
 KARMA_WEB_TEST_ATTRS = {
@@ -120,10 +119,7 @@ def _find_dep(ctx, suffix):
 
 # Generates the karma configuration file for the rule
 def _write_karma_config(ctx, files, amd_names_shim):
-    configuration = ctx.actions.declare_file(
-        "%s.conf.js" % ctx.label.name,
-        sibling = ctx.outputs.executable,
-    )
+    configuration = ctx.outputs.configuration
 
     config_file = None
 
@@ -325,6 +321,9 @@ _karma_web_test = rule(
     test = True,
     executable = True,
     attrs = KARMA_WEB_TEST_ATTRS,
+    outputs = {
+        "configuration": "%{name}.conf.js",
+    },
 )
 
 def karma_web_test(
@@ -359,6 +358,10 @@ def karma_web_test(
     environment must specify CHROME_BIN so that the rule will know which Chrome binary to run.
     Other `browsers` and `customLaunchers` may be set using the a base Karma configuration
     specified in the `config_file` attribute.
+
+    By default we open a headless Chrome. To use a real Chrome browser window, you can pass
+    `--define DISPLAY=true` to Bazel, along with `configuration_env_vars = ["DISPLAY"]` on
+    `karma_web_test`.
 
     Args:
       srcs: A list of JavaScript test files

@@ -1,0 +1,8 @@
+(() => {
+  // packages/esbuild/test/bundle/index.mjs
+  var NAME = "bazel";
+
+  // packages/esbuild/test/bundle/a.mjs
+  console.log(`Hello ${NAME}`);
+})();
+//# sourceMappingURL=bundle.js.map

@@ -1,0 +1,12 @@
+// packages/esbuild/test/alias-mapping/module-one/index.js
+var getId = () => "module-one";
+
+// packages/esbuild/test/alias-mapping/module-two/index.js
+var getId2 = () => "module-two";
+
+// packages/esbuild/test/alias-mapping/main.js
+var main_default = `Full ID: ${getId} - ${getId2}`;
+export {
+  main_default as default
+};
+//# sourceMappingURL=bundle.js.map

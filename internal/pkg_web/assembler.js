@@ -17,6 +17,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const isBinary = require('isbinaryfile').isBinaryFileSync;
 
 /**
  * Create a new directory and any necessary subdirectories
@@ -29,8 +30,57 @@ function mkdirp(p) {
   }
 }
 
+function unquoteArgs(s) {
+  return s.replace(/^'(.*)'$/, '$1');
+}
+
+function getBazelStatusMappings(statusFilePath) {
+  if (!statusFilePath) return {};
+  const stampFileLines = fs.readFileSync(statusFilePath, {encoding: 'utf-8'}).trim().split('\n');
+  const stampMap = {};
+  for (const line of stampFileLines) {
+    const [key, value] = line.split(' ');
+    stampMap[key] = value;
+  }
+  return stampMap;
+}
+
+function normalizeSubstitutions(substitutionsArg, stampMap) {
+  const substitutions = JSON.parse(substitutionsArg);
+
+  const normalizedSubstitutions = {};
+
+  for (const occurrence in substitutions) {
+    let substituteWith = substitutions[occurrence];
+    if (substituteWith.match(/^{.*?}$/)) {
+      substituteWith = substituteWith.replace(/^{(.*?)}$/, '$1');
+      if (!stampMap[substituteWith]) {
+        throw new Error(`Could not find ${substituteWith} key in status file.`);
+      }
+      substituteWith = stampMap[substituteWith];
+    }
+    normalizedSubstitutions[occurrence] = substituteWith;
+  }
+  return normalizedSubstitutions;
+}
+
 function main(params) {
   const outdir = params.shift();
+
+  const volatileFilePath = params.shift();
+
+  const stableFilePath = params.shift();
+
+  const rawSubstitutions = params.shift().replace(/^'(.*)'$/, '$1');
+
+  const stampMap = {
+    ...getBazelStatusMappings(volatileFilePath),
+    ...getBazelStatusMappings(stableFilePath),
+  };
+
+  const normalizedSubstitutions = normalizeSubstitutions(rawSubstitutions, stampMap)
+
+  const substitutions = Object.entries(normalizedSubstitutions);
 
   const rootDirs = [];
   while (params.length && params[0] !== '--assets') {
@@ -42,6 +92,7 @@ function main(params) {
   }
   // Always trim the longest prefix
   rootDirs.sort((a, b) => b.length - a.length);
+
   params.shift(); // --assets
 
   function relative(execPath) {
@@ -56,12 +107,20 @@ function main(params) {
     return execPath;
   }
 
-  function copy(f) {
+  function copy(f, substitutions) {
     if (fs.statSync(f).isDirectory()) {
       for (const file of fs.readdirSync(f)) {
         // Change paths to posix
-        copy(path.join(f, file).replace(/\\/g, '/'));
+        copy(path.join(f, file).replace(/\\/g, '/'), substitutions);
       }
+    } else if (!isBinary(f)) {
+      const dest = path.join(outdir, relative(f));
+      let content = fs.readFileSync(f, {encoding: 'utf-8'});
+      substitutions.forEach(([occurrence, replaceWith]) => {
+        content = content.replace(occurrence, replaceWith);
+      });
+      fs.mkdirSync(path.dirname(dest), {recursive: true});
+      fs.writeFileSync(dest, content);
     } else {
       const dest = path.join(outdir, relative(f));
       mkdirp(path.dirname(dest));
@@ -75,7 +134,7 @@ function main(params) {
   // copied from within bazel-bin.
   // See https://github.com/bazelbuild/rules_nodejs/pull/546.
   for (const f of new Set(params)) {
-    copy(f);
+    copy(f, substitutions);
   }
   return 0;
 }
@@ -85,6 +144,9 @@ module.exports = {main};
 if (require.main === module) {
   // We always require the arguments are encoded into a flagfile
   // so that we don't exhaust the command-line limit.
-  const params = fs.readFileSync(process.argv[2], {encoding: 'utf-8'}).split('\n').filter(l => !!l);
+  const params = fs.readFileSync(process.argv[2], {encoding: 'utf-8'})
+                     .split('\n')
+                     .filter(l => !!l)
+                     .map(unquoteArgs);
   process.exitCode = main(params);
 }

@@ -113,6 +113,9 @@ example_integration_test(
 
 example_integration_test(
     name = "examples_jest",
+    npm_packages = {
+        "//packages/typescript:npm_package": "@bazel/typescript",
+    },
     owners = ["@mrmeku"],
 )
 
@@ -235,6 +238,7 @@ example_integration_test(
 
 example_integration_test(
     name = "examples_angular_bazel_architect",
+    timeout = "long",
     bazel_commands = [
         "test ...",
     ],

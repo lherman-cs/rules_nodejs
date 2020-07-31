@@ -20,10 +20,16 @@ load("@build_bazel_rules_nodejs//internal/node:node_labels.bzl", "get_node_label
 def _cypress_repository_impl(repository_ctx):
     node = repository_ctx.path(get_node_label(repository_ctx))
 
-    cypress_install = "packages/cypress/internal/cypress-install.js"
+    install_cypress = "packages/cypress/internal/install-cypress.js"
     repository_ctx.template(
-        cypress_install,
-        repository_ctx.path(repository_ctx.attr._cypress_install),
+        install_cypress,
+        repository_ctx.path(repository_ctx.attr._install_cypress),
+        {},
+    )
+
+    repository_ctx.template(
+        "plugins/base.js",
+        repository_ctx.path(repository_ctx.attr._base_plugin),
         {},
     )
 
@@ -36,9 +42,12 @@ def _cypress_repository_impl(repository_ctx):
     )
 
     exec_result = repository_ctx.execute(
-        [node, cypress_install, repository_ctx.path(repository_ctx.attr.cypress_bin)],
+        [node, install_cypress, repository_ctx.path(repository_ctx.attr.cypress_bin)],
         quiet = repository_ctx.attr.quiet,
     )
+
+    if exec_result.return_code != 0 and repository_ctx.attr.fail_on_error:
+        fail("\ncypress_repository exited with code: {}\n\nstdout:\n{}\n\nstderr:\n{}\n\n".format(exec_result.return_code, exec_result.stdout, exec_result.stderr))
 
 cypress_repository = repository_rule(
     implementation = _cypress_repository_impl,
@@ -48,17 +57,25 @@ cypress_repository = repository_rule(
             allow_single_file = True,
             default = "@npm//:node_modules/cypress/bin/cypress",
         ),
+        "fail_on_error": attr.bool(
+            default = True,
+            doc = "If the repository rule should allow errors",
+        ),
         "quiet": attr.bool(
             default = True,
             doc = "If stdout and stderr should be printed to the terminal",
         ),
-        "_cypress_install": attr.label(
+        "_base_plugin": attr.label(
             allow_single_file = True,
-            default = "//packages/cypress:internal/cypress-install.js",
+            default = "//packages/cypress:internal/plugins/base.js",
         ),
         "_cypress_web_test": attr.label(
             allow_single_file = True,
             default = "//packages/cypress:internal/template.cypress_web_test.bzl",
+        ),
+        "_install_cypress": attr.label(
+            allow_single_file = True,
+            default = "//packages/cypress:internal/install-cypress.js",
         ),
     },
 )

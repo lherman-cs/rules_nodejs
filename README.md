@@ -3,7 +3,7 @@
 
 Circle CI | Bazel CI
 :---: | :---:
-[![CircleCI](https://circleci.com/gh/bazelbuild/rules_nodejs.svg?style=svg)](https://circleci.com/gh/bazelbuild/rules_nodejs) | [![Build status](https://badge.buildkite.com/af1a592b39b11923ef0f523cbb223dd3dbd61629f8bc813c07.svg?branch=master)](https://buildkite.com/bazel/nodejs-rules-nodejs-postsubmit)
+[![CircleCI](https://circleci.com/gh/bazelbuild/rules_nodejs/tree/stable.svg?style=svg)](https://circleci.com/gh/bazelbuild/rules_nodejs/tree/stable) | [![Build status](https://badge.buildkite.com/af1a592b39b11923ef0f523cbb223dd3dbd61629f8bc813c07.svg?branch=master)](https://buildkite.com/bazel/nodejs-rules-nodejs-postsubmit)
 
 The nodejs rules integrate NodeJS development toolchain and runtime with Bazel.
 
@@ -61,7 +61,7 @@ Organizations:
 - [LogiOcean](https://www.logiocean.com)
 - [Spica](https://spicaengine.com)
 
-Not on this list? [Send a PR](https://github.com/bazelbuild/rules_nodejs/edit/master/README.md) to add your repo or organization!
+Not on this list? [Send a PR](https://github.com/bazelbuild/rules_nodejs/edit/stable/README.md) to add your repo or organization!
 
 ## User testimonials
 

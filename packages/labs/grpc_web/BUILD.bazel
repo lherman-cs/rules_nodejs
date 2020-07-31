@@ -1,6 +1,5 @@
 load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
-load("@build_bazel_rules_nodejs//:index.bzl", "nodejs_binary")
-load("@build_bazel_rules_nodejs//internal/js_library:js_library.bzl", "js_library")
+load("@build_bazel_rules_nodejs//:index.bzl", "js_library", "nodejs_binary")
 load("@build_bazel_rules_nodejs//internal/npm_install:npm_umd_bundle.bzl", "npm_umd_bundle")
 
 package(default_visibility = ["//visibility:public"])
@@ -8,7 +7,8 @@ package(default_visibility = ["//visibility:public"])
 bzl_library(
     name = "bzl",
     srcs = glob(["*.bzl"]),
-    visibility = ["//:__pkg__"],
+    visibility = ["//packages/labs:__subpackages__"],
+    deps = ["@rules_proto//proto:defs"],
 )
 
 nodejs_binary(
@@ -42,7 +42,7 @@ well_known_protos = [
 
 js_library(
     name = "bootstrap_scripts",
-    srcs = [
+    named_module_srcs = [
         "@npm//google-protobuf:google-protobuf__umd",
         "@npm//grpc-web:grpc-web__umd",
     ] + [":google-protobuf-%s__umd" % p for p in well_known_protos],

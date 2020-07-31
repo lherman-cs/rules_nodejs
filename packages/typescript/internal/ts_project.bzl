@@ -1,6 +1,11 @@
 "ts_project rule"
 
 load("@build_bazel_rules_nodejs//:providers.bzl", "DeclarationInfo", "NpmPackageInfo", "declaration_info", "js_module_info", "run_node")
+load("@build_bazel_rules_nodejs//internal/linker:link_node_modules.bzl", "module_mappings_aspect")
+load("@build_bazel_rules_nodejs//internal/node:node.bzl", "nodejs_binary")
+load(":ts_config.bzl", "TsConfigInfo", "write_tsconfig")
+
+_ValidOptionsInfo = provider()
 
 _DEFAULT_TSC = (
     # BEGIN-INTERNAL
@@ -9,11 +14,33 @@ _DEFAULT_TSC = (
     "//typescript/bin:tsc"
 )
 
+_DEFAULT_TSC_BIN = (
+    # BEGIN-INTERNAL
+    "@npm" +
+    # END-INTERNAL
+    "//:node_modules/typescript/bin/tsc"
+)
+
+_DEFAULT_TYPESCRIPT_MODULE = (
+    # BEGIN-INTERNAL
+    "@npm" +
+    # END-INTERNAL
+    "//typescript"
+)
+
 _ATTRS = {
     "args": attr.string_list(),
     "declaration_dir": attr.string(),
-    "deps": attr.label_list(providers = [DeclarationInfo]),
+    "deps": attr.label_list(
+        providers = [
+            # Provide one or the other of these
+            [DeclarationInfo],
+            [_ValidOptionsInfo],
+        ],
+        aspects = [module_mappings_aspect],
+    ),
     "extends": attr.label_list(allow_files = [".json"]),
+    "link_workspace_root": attr.bool(),
     "out_dir": attr.string(),
     "root_dir": attr.string(),
     # NB: no restriction on extensions here, because tsc sometimes adds type-check support
@@ -21,7 +48,8 @@ _ATTRS = {
     # if you swap out the `compiler` attribute (like with ngtsc)
     # that compiler might allow more sources than tsc does.
     "srcs": attr.label_list(allow_files = True, mandatory = True),
-    "tsc": attr.label(default = Label(_DEFAULT_TSC), executable = True, cfg = "host"),
+    "supports_workers": attr.bool(default = False),
+    "tsc": attr.label(default = Label(_DEFAULT_TSC), executable = True, cfg = "target"),
     "tsconfig": attr.label(mandatory = True, allow_single_file = [".json"]),
 }
 
@@ -36,19 +64,56 @@ _OUTPUTS = {
     "typings_outs": attr.output_list(),
 }
 
-_TsConfigInfo = provider(
-    doc = """Passes tsconfig.json files to downstream compilations so that TypeScript can read them.
-        This is needed to support Project References""",
-    fields = {
-        "tsconfigs": "depset of tsconfig.json files",
-    },
-)
-
 def _join(*elements):
-    return "/".join([f for f in elements if f])
+    segments = [f for f in elements if f]
+    if len(segments):
+        return "/".join(segments)
+    return "."
+
+def _calculate_root_dir(ctx):
+    some_generated_path = None
+    some_source_path = None
+    root_path = None
+
+    # Note we don't have access to the ts_project macro allow_js param here.
+    # For error-handling purposes, we can assume that any .js/.jsx
+    # input is meant to be in the rootDir alongside .ts/.tsx sources,
+    # whether the user meant for them to be sources or not.
+    # It's a non-breaking change to relax this constraint later, but would be
+    # a breaking change to restrict it further.
+    allow_js = True
+    for src in ctx.files.srcs:
+        if _is_ts_src(src.path, allow_js):
+            if src.is_source:
+                some_source_path = src.path
+            else:
+                some_generated_path = src.path
+                root_path = ctx.bin_dir.path
+
+    if some_source_path and some_generated_path:
+        fail("ERROR: %s srcs cannot be a mix of generated files and source files " % ctx.label +
+             "since this would prevent giving a single rootDir to the TypeScript compiler\n" +
+             "    found generated file %s and source file %s" %
+             (some_generated_path, some_source_path))
+
+    return _join(
+        root_path,
+        ctx.label.package,
+        ctx.attr.root_dir,
+    )
 
 def _ts_project_impl(ctx):
     arguments = ctx.actions.args()
+    execution_requirements = {}
+    progress_prefix = "Compiling TypeScript project"
+
+    if ctx.attr.supports_workers:
+        # Set to use a multiline param-file for worker mode
+        arguments.use_param_file("@%s", use_always = True)
+        arguments.set_param_file_format("multiline")
+        execution_requirements["supports-workers"] = "1"
+        execution_requirements["worker-key-mnemonic"] = "TsProject"
+        progress_prefix = "Compiling TypeScript project (worker mode)"
 
     # Add user specified arguments *before* rule supplied arguments
     arguments.add_all(ctx.attr.args)
@@ -59,7 +124,7 @@ def _ts_project_impl(ctx):
         "--outDir",
         _join(ctx.bin_dir.path, ctx.label.package, ctx.attr.out_dir),
         "--rootDir",
-        _join(ctx.label.package, ctx.attr.root_dir) if ctx.label.package else ".",
+        _calculate_root_dir(ctx),
     ])
     if len(ctx.outputs.typings_outs) > 0:
         declaration_dir = ctx.attr.declaration_dir if ctx.attr.declaration_dir else ctx.attr.out_dir
@@ -85,19 +150,31 @@ def _ts_project_impl(ctx):
         ])
 
     deps_depsets = []
+    inputs = ctx.files.srcs[:]
     for dep in ctx.attr.deps:
-        if _TsConfigInfo in dep:
-            deps_depsets.append(dep[_TsConfigInfo].tsconfigs)
+        if TsConfigInfo in dep:
+            deps_depsets.append(dep[TsConfigInfo].deps)
         if NpmPackageInfo in dep:
             # TODO: we could maybe filter these to be tsconfig.json or *.d.ts only
             # we don't expect tsc wants to read any other files from npm packages.
             deps_depsets.append(dep[NpmPackageInfo].sources)
         if DeclarationInfo in dep:
             deps_depsets.append(dep[DeclarationInfo].transitive_declarations)
+        if _ValidOptionsInfo in dep:
+            inputs.append(dep[_ValidOptionsInfo].marker)
 
-    inputs = ctx.files.srcs + depset(transitive = deps_depsets).to_list() + [ctx.file.tsconfig]
-    if ctx.attr.extends:
-        inputs.extend(ctx.files.extends)
+    inputs.extend(depset(transitive = deps_depsets).to_list())
+
+    # Gather TsConfig info from both the direct (tsconfig) and indirect (extends) attribute
+    if TsConfigInfo in ctx.attr.tsconfig:
+        inputs.extend(ctx.attr.tsconfig[TsConfigInfo].deps)
+    else:
+        inputs.append(ctx.file.tsconfig)
+    for extend in ctx.attr.extends:
+        if TsConfigInfo in extend:
+            inputs.extend(extend[TsConfigInfo].deps)
+        else:
+            inputs.extend(extend.files.to_list())
 
     # We do not try to predeclare json_outs, because their output locations generally conflict with their path in the source tree.
     # (The exception is when out_dir is used, then the .json output is a different path than the input.)
@@ -115,9 +192,14 @@ def _ts_project_impl(ctx):
 
     outputs = json_outs + ctx.outputs.js_outs + ctx.outputs.map_outs + ctx.outputs.typings_outs + ctx.outputs.typing_maps_outs
     if ctx.outputs.buildinfo_out:
+        arguments.add_all([
+            "--tsBuildInfoFile",
+            ctx.outputs.buildinfo_out.path,
+        ])
         outputs.append(ctx.outputs.buildinfo_out)
-    runtime_outputs = depset(json_outs + ctx.outputs.js_outs + ctx.outputs.map_outs)
+    runtime_outputs = json_outs + ctx.outputs.js_outs + ctx.outputs.map_outs
     typings_outputs = ctx.outputs.typings_outs + ctx.outputs.typing_maps_outs + [s for s in ctx.files.srcs if s.path.endswith(".d.ts")]
+    default_outputs_depset = depset(runtime_outputs) if len(runtime_outputs) else depset(typings_outputs)
 
     if len(outputs) > 0:
         run_node(
@@ -126,10 +208,13 @@ def _ts_project_impl(ctx):
             arguments = [arguments],
             outputs = outputs,
             executable = "tsc",
-            progress_message = "Compiling TypeScript project %s [tsc -p %s]" % (
+            execution_requirements = execution_requirements,
+            progress_message = "%s %s [tsc -p %s]" % (
+                progress_prefix,
                 ctx.label,
                 ctx.file.tsconfig.short_path,
             ),
+            link_workspace_root = ctx.attr.link_workspace_root,
         )
 
     providers = [
@@ -139,20 +224,20 @@ def _ts_project_impl(ctx):
         # Only the JavaScript outputs are intended for use in non-TS-aware
         # dependents.
         DefaultInfo(
-            files = runtime_outputs,
+            files = default_outputs_depset,
             runfiles = ctx.runfiles(
-                transitive_files = runtime_outputs,
+                transitive_files = default_outputs_depset,
                 collect_default = True,
             ),
         ),
         js_module_info(
-            sources = runtime_outputs,
+            sources = depset(runtime_outputs),
             deps = ctx.attr.deps,
         ),
-        _TsConfigInfo(tsconfigs = depset([ctx.file.tsconfig] + ctx.files.extends, transitive = [
-            dep[_TsConfigInfo].tsconfigs
+        TsConfigInfo(deps = depset([ctx.file.tsconfig] + ctx.files.extends, transitive = [
+            dep[TsConfigInfo].deps
             for dep in ctx.attr.deps
-            if _TsConfigInfo in dep
+            if TsConfigInfo in dep
         ])),
     ]
 
@@ -176,30 +261,37 @@ def _validate_options_impl(ctx):
 
     arguments = ctx.actions.args()
     arguments.add_all([ctx.file.tsconfig.path, marker.path, ctx.attr.target, struct(
+        allow_js = ctx.attr.allow_js,
         declaration = ctx.attr.declaration,
         declaration_map = ctx.attr.declaration_map,
         composite = ctx.attr.composite,
         emit_declaration_only = ctx.attr.emit_declaration_only,
         source_map = ctx.attr.source_map,
         incremental = ctx.attr.incremental,
+        ts_build_info_file = ctx.attr.ts_build_info_file,
     ).to_json()])
+
+    inputs = ctx.files.extends[:]
+    if TsConfigInfo in ctx.attr.tsconfig:
+        inputs.extend(ctx.attr.tsconfig[TsConfigInfo].deps)
+    else:
+        inputs.append(ctx.file.tsconfig)
 
     run_node(
         ctx,
-        inputs = [ctx.file.tsconfig] + ctx.files.extends,
+        inputs = inputs,
         outputs = [marker],
         arguments = [arguments],
         executable = "validator",
     )
     return [
-        DeclarationInfo(
-            transitive_declarations = depset([marker]),
-        ),
+        _ValidOptionsInfo(marker = marker),
     ]
 
 validate_options = rule(
     implementation = _validate_options_impl,
     attrs = {
+        "allow_js": attr.bool(),
         "composite": attr.bool(),
         "declaration": attr.bool(),
         "declaration_map": attr.bool(),
@@ -208,14 +300,24 @@ validate_options = rule(
         "incremental": attr.bool(),
         "source_map": attr.bool(),
         "target": attr.string(),
+        "ts_build_info_file": attr.string(),
         "tsconfig": attr.label(mandatory = True, allow_single_file = [".json"]),
         "validator": attr.label(default = Label("//packages/typescript/bin:ts_project_options_validator"), executable = True, cfg = "host"),
     },
 )
 
-def _out_paths(srcs, outdir, rootdir, ext):
+def _is_ts_src(src, allow_js):
+    if not src.endswith(".d.ts") and (src.endswith(".ts") or src.endswith(".tsx")):
+        return True
+    return allow_js and (src.endswith(".js") or src.endswith(".jsx"))
+
+def _out_paths(srcs, outdir, rootdir, allow_js, ext):
     rootdir_replace_pattern = rootdir + "/" if rootdir else ""
-    return [_join(outdir, f[:f.rindex(".")].replace(rootdir_replace_pattern, "") + ext) for f in srcs if not f.endswith(".d.ts") and not f.endswith(".json")]
+    return [
+        _join(outdir, f[:f.rindex(".")].replace(rootdir_replace_pattern, "") + ext)
+        for f in srcs
+        if _is_ts_src(f, allow_js)
+    ]
 
 def ts_project_macro(
         name = "tsconfig",
@@ -224,17 +326,23 @@ def ts_project_macro(
         args = [],
         deps = [],
         extends = None,
+        allow_js = False,
         declaration = False,
         source_map = False,
         declaration_map = False,
         composite = False,
         incremental = False,
         emit_declaration_only = False,
+        ts_build_info_file = None,
         tsc = None,
+        worker_tsc_bin = _DEFAULT_TSC_BIN,
+        worker_typescript_module = _DEFAULT_TYPESCRIPT_MODULE,
         validate = True,
+        supports_workers = False,
         declaration_dir = None,
         out_dir = None,
         root_dir = None,
+        link_workspace_root = False,
         **kwargs):
     """Compiles one TypeScript project using `tsc --project`
 
@@ -287,6 +395,10 @@ def ts_project_macro(
     >     ]
     > }
     > ```
+    >
+    > See some related discussion including both "rootDirs" and "paths" for a monorepo setup
+    > using custom import paths:
+    > https://github.com/bazelbuild/rules_nodejs/issues/2298
 
     ### Issues when running non-sandboxed
 
@@ -343,13 +455,51 @@ def ts_project_macro(
 
         deps: List of labels of other rules that produce TypeScript typings (.d.ts files)
 
-        tsconfig: Label of the tsconfig.json file to use for the compilation.
+        tsconfig: Label of the tsconfig.json file to use for the compilation
 
-            By default, we add `.json` to the `name` attribute.
+            To support "chaining" of more than one extended config, this label could be a target that
+            provdes `TsConfigInfo` such as `ts_config`.
 
-        extends: List of labels of tsconfig file(s) referenced in `extends` section of tsconfig.
+            By default, we assume the tsconfig file is named by adding `.json` to the `name` attribute.
 
-            Must include any tsconfig files "chained" by extends clauses.
+            EXPERIMENTAL: generated tsconfig
+
+            Instead of a label, you can pass a dictionary of tsconfig keys.
+
+            In this case, a tsconfig.json file will be generated for this compilation, in the following way:
+            - all top-level keys will be copied by converting the dict to json.
+              So `tsconfig = {"compilerOptions": {"declaration": True}}`
+              will result in a generated `tsconfig.json` with `{"compilerOptions": {"declaration": true}}`
+            - each file in srcs will be converted to a relative path in the `files` section.
+            - the `extends` attribute will be converted to a relative path
+
+            Note that you can mix and match attributes and compilerOptions properties, so these are equivalent:
+
+            ```
+            ts_project(
+                tsconfig = {
+                    "compilerOptions": {
+                        "declaration": True,
+                    },
+                },
+            )
+            ```
+            and
+            ```
+            ts_project(
+                declaration = True,
+            )
+            ```
+
+        extends: Label of the tsconfig file referenced in the `extends` section of tsconfig
+
+            To support "chaining" of more than one extended config, this label could be a target that
+            provdes `TsConfigInfo` such as `ts_config`.
+
+            _DEPRECATED, to be removed in 3.0_:
+            For backwards compatibility, this accepts a list of Labels of the "chained"
+            tsconfig files. You should instead use a single Label of a `ts_config` target.
+            Follow this deprecation: https://github.com/bazelbuild/rules_nodejs/issues/2140
 
         args: List of strings of additional command-line arguments to pass to tsc.
 
@@ -358,7 +508,27 @@ def ts_project_macro(
             For example, `tsc = "@my_deps//typescript/bin:tsc"`
             Or you can pass a custom compiler binary instead.
 
+        worker_tsc_bin: Label of the TypeScript compiler binary to run when running in worker mode.
+
+            For example, `tsc = "@my_deps//node_modules/typescript/bin/tsc"`
+            Or you can pass a custom compiler binary instead.
+
+        worker_typescript_module: Label of the package containing all data deps of worker_tsc_bin.
+
+            For example, `tsc = "@my_deps//typescript"`
+
         validate: boolean; whether to check that the tsconfig settings match the attributes.
+
+        supports_workers: Experimental! Use only with caution.
+
+            Allows you to enable the Bazel Persistent Workers strategy for this project.
+            See https://docs.bazel.build/versions/master/persistent-workers.html
+
+            This requires that the tsc binary support a `--watch` option.
+
+            NOTE: this does not work on Windows yet.
+            We will silently fallback to non-worker mode on Windows regardless of the value of this attribute.
+            Follow https://github.com/bazelbuild/rules_nodejs/issues/2277 for progress on this feature.
 
         root_dir: a string specifying a subdirectory under the input package which should be consider the
             root directory of all the input files.
@@ -371,6 +541,9 @@ def ts_project_macro(
             so if your rule appears in path/to/my/package/BUILD.bazel and out_dir = "foo" then the .js files
             will appear in bazel-out/[arch]/bin/path/to/my/package/foo/*.js.
             By default the out_dir is '.', meaning the packages folder in bazel-out.
+
+        allow_js: boolean; Specifies whether TypeScript will read .js and .jsx files. When used with declaration,
+            TypeScript will generate .d.ts files from .js files.
 
         declaration_dir: a string specifying a subdirectory under the bazel-out folder where generated declaration
             outputs are written. Equivalent to the TypeScript --declarationDir option.
@@ -388,34 +561,117 @@ def ts_project_macro(
             Instructs Bazel to expect a `.tsbuildinfo` output.
         emit_declaration_only: if the `emitDeclarationOnly` bit is set in the tsconfig.
             Instructs Bazel *not* to expect `.js` or `.js.map` outputs for `.ts` sources.
+        ts_build_info_file: the user-specified value of `tsBuildInfoFile` from the tsconfig.
+            Helps Bazel to predict the path where the .tsbuildinfo output is written.
+
+        link_workspace_root: Link the workspace root to the bin_dir to support absolute requires like 'my_wksp/path/to/file'.
+            If source files need to be required then they can be copied to the bin_dir with copy_to_bin.
 
         **kwargs: passed through to underlying rule, allows eg. visibility, tags
     """
 
     if srcs == None:
-        srcs = native.glob(["**/*.ts", "**/*.tsx"])
-
-    if tsconfig == None:
-        tsconfig = name + ".json"
-
+        if allow_js == True:
+            srcs = native.glob(["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx"])
+        else:
+            srcs = native.glob(["**/*.ts", "**/*.tsx"])
     extra_deps = []
 
-    if validate:
-        validate_options(
-            name = "_validate_%s_options" % name,
-            target = "//%s:%s" % (native.package_name(), name),
-            declaration = declaration,
-            source_map = source_map,
-            declaration_map = declaration_map,
-            composite = composite,
-            incremental = incremental,
-            emit_declaration_only = emit_declaration_only,
-            tsconfig = tsconfig,
-            extends = extends,
+    if type(tsconfig) == type(dict()):
+        # Opt-in to #2140 breaking change at the same time you opt-in to experimental tsconfig dict
+        if type(extends) == type([]):
+            fail("when tsconfig is a dict, extends should have a single value")
+
+        # Copy attributes <-> tsconfig properties
+        # TODO: fail if compilerOptions includes a conflict with an attribute?
+        compiler_options = tsconfig.setdefault("compilerOptions", {})
+        source_map = compiler_options.setdefault("sourceMap", source_map)
+        declaration = compiler_options.setdefault("declaration", declaration)
+        declaration_map = compiler_options.setdefault("declarationMap", declaration_map)
+        emit_declaration_only = compiler_options.setdefault("emitDeclarationOnly", emit_declaration_only)
+        allow_js = compiler_options.setdefault("allowJs", allow_js)
+
+        # These options are always passed on the tsc command line so don't include them
+        # in the tsconfig. At best they're redundant, but at worst we'll have a conflict
+        if "outDir" in compiler_options.keys():
+            out_dir = compiler_options.pop("outDir")
+        if "declarationDir" in compiler_options.keys():
+            declaration_dir = compiler_options.pop("declarationDir")
+        if "rootDir" in compiler_options.keys():
+            root_dir = compiler_options.pop("rootDir")
+
+        # FIXME: need to remove keys that have a None value?
+        write_tsconfig(
+            name = "_gen_tsconfig_%s" % name,
+            config = tsconfig,
+            files = srcs,
+            extends = Label("//%s:%s" % (native.package_name(), name)).relative(extends) if extends else None,
+            out = "tsconfig_%s.json" % name,
         )
-        extra_deps.append("_validate_%s_options" % name)
+
+        # From here, tsconfig becomes a file, the same as if the
+        # user supplied a tsconfig.json InputArtifact
+        tsconfig = "tsconfig_%s.json" % name
+
+    else:
+        if tsconfig == None:
+            tsconfig = name + ".json"
+
+        if validate:
+            validate_options(
+                name = "_validate_%s_options" % name,
+                target = "//%s:%s" % (native.package_name(), name),
+                declaration = declaration,
+                source_map = source_map,
+                declaration_map = declaration_map,
+                composite = composite,
+                incremental = incremental,
+                ts_build_info_file = ts_build_info_file,
+                emit_declaration_only = emit_declaration_only,
+                allow_js = allow_js,
+                tsconfig = tsconfig,
+                extends = extends,
+            )
+            extra_deps.append("_validate_%s_options" % name)
+
+    if supports_workers:
+        tsc_worker = "%s_worker" % name
+        protobufjs = (
+            # BEGIN-INTERNAL
+            "@npm" +
+            # END-INTERNAL
+            "//protobufjs"
+        )
+        nodejs_binary(
+            name = tsc_worker,
+            data = [
+                Label("//packages/typescript/internal/worker:worker"),
+                Label(worker_tsc_bin),
+                Label(worker_typescript_module),
+                Label(protobufjs),
+                tsconfig,
+            ],
+            entry_point = Label("//packages/typescript/internal/worker:worker_adapter"),
+            templated_args = [
+                "--nobazel_patch_module_resolver",
+                "$(execpath {})".format(Label(worker_tsc_bin)),
+                "--project",
+                "$(execpath {})".format(tsconfig),
+                # FIXME: should take out_dir into account
+                "--outDir",
+                "$(RULEDIR)",
+                # FIXME: what about other settings like declaration_dir, root_dir, etc
+            ],
+        )
+
+        tsc = ":" + tsc_worker
 
     typings_out_dir = declaration_dir if declaration_dir else out_dir
+    tsbuildinfo_path = ts_build_info_file if ts_build_info_file else name + ".tsbuildinfo"
+
+    # Backcompat for extends as a list, to cleanup in #2140
+    if (type(extends) == type("")):
+        extends = [extends]
 
     ts_project(
         name = name,
@@ -427,11 +683,16 @@ def ts_project_macro(
         declaration_dir = declaration_dir,
         out_dir = out_dir,
         root_dir = root_dir,
-        js_outs = _out_paths(srcs, out_dir, root_dir, ".js") if not emit_declaration_only else [],
-        map_outs = _out_paths(srcs, out_dir, root_dir, ".js.map") if source_map and not emit_declaration_only else [],
-        typings_outs = _out_paths(srcs, typings_out_dir, root_dir, ".d.ts") if declaration or composite else [],
-        typing_maps_outs = _out_paths(srcs, typings_out_dir, root_dir, ".d.ts.map") if declaration_map else [],
-        buildinfo_out = tsconfig[:-5] + ".tsbuildinfo" if composite or incremental else None,
+        js_outs = _out_paths(srcs, out_dir, root_dir, False, ".js") if not emit_declaration_only else [],
+        map_outs = _out_paths(srcs, out_dir, root_dir, False, ".js.map") if source_map and not emit_declaration_only else [],
+        typings_outs = _out_paths(srcs, typings_out_dir, root_dir, allow_js, ".d.ts") if declaration or composite else [],
+        typing_maps_outs = _out_paths(srcs, typings_out_dir, root_dir, allow_js, ".d.ts.map") if declaration_map else [],
+        buildinfo_out = tsbuildinfo_path if composite or incremental else None,
         tsc = tsc,
+        link_workspace_root = link_workspace_root,
+        supports_workers = select({
+            "@bazel_tools//src/conditions:host_windows": False,
+            "//conditions:default": supports_workers,
+        }),
         **kwargs
     )

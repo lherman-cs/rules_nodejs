@@ -6,7 +6,7 @@ If all users of your library code use Bazel, they should just add your library
 to the `deps` of one of their targets.
 """
 
-load("//:providers.bzl", "DeclarationInfo", "JSModuleInfo", "LinkablePackageInfo", "NodeContextInfo")
+load("//:providers.bzl", "DeclarationInfo", "JSModuleInfo", "LinkablePackageInfo", "NODE_CONTEXT_ATTRS", "NodeContextInfo")
 
 _DOC = """The pkg_npm rule creates a directory containing a publishable npm artifact.
 
@@ -73,7 +73,7 @@ You can pass arguments to npm by escaping them from Bazel using a double-hyphen,
 """
 
 # Used in angular/angular /packages/bazel/src/ng_package/ng_package.bzl
-PKG_NPM_ATTRS = {
+PKG_NPM_ATTRS = dict(NODE_CONTEXT_ATTRS, **{
     "deps": attr.label_list(
         doc = """Other targets which produce files that should be included in the package, such as `rollup_bundle`""",
         allow_files = True,
@@ -82,17 +82,17 @@ PKG_NPM_ATTRS = {
         doc = """Other pkg_npm rules whose content is copied into this package.""",
         allow_files = True,
     ),
-    "node_context_data": attr.label(
-        default = "@build_bazel_rules_nodejs//internal:node_context_data",
-        providers = [NodeContextInfo],
-        doc = "Internal use only",
-    ),
     "package_name": attr.string(
         doc = """Optional package_name that this npm package may be imported as.""",
     ),
     "replace_with_version": attr.string(
-        doc = """If set this value is replaced with the version stamp data.
-        See the section on stamping in the README.""",
+        doc = """DEPRECATED: use substitutions instead.
+
+`replace_with_version = "my_version_placeholder"` is just syntax sugar for
+`substitutions = {"my_version_placeholder": "{BUILD_SCM_VERSION}"}`.
+
+Follow this deprecation at https://github.com/bazelbuild/rules_nodejs/issues/2158
+""",
         default = "0.0.0-PLACEHOLDER",
     ),
     "srcs": attr.label_list(
@@ -100,11 +100,17 @@ PKG_NPM_ATTRS = {
         allow_files = True,
     ),
     "substitutions": attr.string_dict(
-        doc = """Key-value pairs which are replaced in all the files while building the package.""",
+        doc = """Key-value pairs which are replaced in all the files while building the package.
+        
+You can use values from the workspace status command using curly braces, for example
+`{"0.0.0-PLACEHOLDER": "{STABLE_GIT_VERSION}"}`.
+
+See the section on stamping in the [README](stamping)
+""",
     ),
     "vendor_external": attr.string_list(
         doc = """External workspaces whose contents should be vendored into this workspace.
-        Avoids 'external/foo' path segments in the resulting package.""",
+        Avoids `external/foo` path segments in the resulting package.""",
     ),
     "_npm_script_generator": attr.label(
         default = Label("//internal/pkg_npm:npm_script_generator"),
@@ -116,16 +122,22 @@ PKG_NPM_ATTRS = {
         cfg = "host",
         executable = True,
     ),
+    "_run_npm_bat_template": attr.label(
+        default = Label("@nodejs//:run_npm.bat.template"),
+        allow_single_file = True,
+    ),
     "_run_npm_template": attr.label(
         default = Label("@nodejs//:run_npm.sh.template"),
         allow_single_file = True,
     ),
-}
+})
 
 # Used in angular/angular /packages/bazel/src/ng_package/ng_package.bzl
 PKG_NPM_OUTPUTS = {
-    "pack": "%{name}.pack",
-    "publish": "%{name}.publish",
+    "pack_bat": "%{name}.pack.bat",
+    "pack_sh": "%{name}.pack.sh",
+    "publish_bat": "%{name}.publish.bat",
+    "publish_sh": "%{name}.publish.sh",
 }
 
 # Takes a depset of files and returns a corresponding list of file paths without any files
@@ -184,7 +196,15 @@ def create_package(ctx, deps_files, nested_packages):
     # current package unless explicitely specified.
     filtered_deps_sources = _filter_out_external_files(ctx, deps_files, package_path)
 
+    # Back-compat for the replace_with_version stamping
+    # see https://github.com/bazelbuild/rules_nodejs/issues/2158 for removal
+    substitutions = dict(**ctx.attr.substitutions)
+    if stamp and ctx.attr.replace_with_version:
+        substitutions.setdefault(ctx.attr.replace_with_version, "{BUILD_SCM_VERSION}")
+
     args = ctx.actions.args()
+    inputs = ctx.files.srcs + deps_files + nested_packages
+
     args.use_param_file("%s", use_always = True)
     args.add(package_dir.path)
     args.add(package_path)
@@ -193,19 +213,23 @@ def create_package(ctx, deps_files, nested_packages):
     args.add(ctx.genfiles_dir.path)
     args.add_joined(filtered_deps_sources, join_with = ",", omit_if_empty = False)
     args.add_joined([p.path for p in nested_packages], join_with = ",", omit_if_empty = False)
-    args.add(ctx.attr.substitutions)
-    args.add(ctx.attr.replace_with_version)
-    args.add(ctx.version_file.path if stamp else "")
-    args.add_joined(ctx.attr.vendor_external, join_with = ",", omit_if_empty = False)
+    args.add(substitutions)
 
-    inputs = ctx.files.srcs + deps_files + nested_packages
-
-    # The version_file is an undocumented attribute of the ctx that lets us read the volatile-status.txt file
-    # produced by the --workspace_status_command. That command will be executed whenever
-    # this action runs, so we get the latest version info on each execution.
-    # See https://github.com/bazelbuild/bazel/issues/1054
     if stamp:
+        # The version_file is an undocumented attribute of the ctx that lets us read the volatile-status.txt file
+        # produced by the --workspace_status_command.
+        # Similarly info_file reads the stable-status.txt file.
+        # That command will be executed whenever
+        # this action runs, so we get the latest version info on each execution.
+        # See https://github.com/bazelbuild/bazel/issues/1054
+        args.add(ctx.version_file.path)
         inputs.append(ctx.version_file)
+        args.add(ctx.info_file.path)
+        inputs.append(ctx.info_file)
+    else:
+        args.add_all(["", ""])
+
+    args.add_joined(ctx.attr.vendor_external, join_with = ",", omit_if_empty = False)
 
     ctx.actions.run(
         progress_message = "Assembling npm package %s" % package_dir.short_path,
@@ -222,19 +246,23 @@ def create_package(ctx, deps_files, nested_packages):
 
 def _create_npm_scripts(ctx, package_dir):
     args = ctx.actions.args()
+
     args.add_all([
         package_dir.path,
-        ctx.outputs.pack.path,
-        ctx.outputs.publish.path,
+        ctx.outputs.pack_sh.path,
+        ctx.outputs.publish_sh.path,
         ctx.file._run_npm_template.path,
+        ctx.outputs.pack_bat.path,
+        ctx.outputs.publish_bat.path,
+        ctx.file._run_npm_bat_template.path,
     ])
 
     ctx.actions.run(
         progress_message = "Generating npm pack & publish scripts",
         mnemonic = "GenerateNpmScripts",
         executable = ctx.executable._npm_script_generator,
-        inputs = [ctx.file._run_npm_template, package_dir],
-        outputs = [ctx.outputs.pack, ctx.outputs.publish],
+        inputs = [ctx.file._run_npm_template, ctx.file._run_npm_bat_template, package_dir],
+        outputs = [ctx.outputs.pack_sh, ctx.outputs.publish_sh, ctx.outputs.pack_bat, ctx.outputs.publish_bat],
         arguments = [args],
         # Must be run local (no sandbox) so that the pwd is the actual execroot
         # in the script which is used to generate the path in the pack & publish
@@ -289,3 +317,23 @@ pkg_npm = rule(
     doc = _DOC,
     outputs = PKG_NPM_OUTPUTS,
 )
+
+def pkg_npm_macro(name, **kwargs):
+    pkg_npm(
+        name = name,
+        **kwargs
+    )
+    native.alias(
+        name = name + ".pack",
+        actual = select({
+            "@bazel_tools//src/conditions:host_windows": name + ".pack.bat",
+            "//conditions:default": name + ".pack.sh",
+        }),
+    )
+    native.alias(
+        name = name + ".publish",
+        actual = select({
+            "@bazel_tools//src/conditions:host_windows": name + ".publish.bat",
+            "//conditions:default": name + ".publish.sh",
+        }),
+    )

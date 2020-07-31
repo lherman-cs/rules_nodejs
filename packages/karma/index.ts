@@ -6,7 +6,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as process from 'process';
 import {createInterface} from 'readline';
-import * as tmp from 'tmp';
 ///<reference types="lib.dom"/>
 
 /**
@@ -24,14 +23,14 @@ function sha1(data) {
 function initConcatJs(logger, emitter, basePath, hostname, port) {
   const log = logger.create('framework.concat_js');
 
-  // Create a tmp file for the concat bundle that is automatically cleaned up on
-  // exit.
-  const tmpFile = tmp.fileSync({keep: false, dir: process.env['TEST_TMPDIR']});
+  // Create a tmp file for the concat bundle, rely on Bazel to clean the TMPDIR
+  const tmpFile =
+      path.join(process.env['TEST_TMPDIR'], crypto.randomBytes(6).readUIntLE(0, 6).toString(36));
 
   emitter.on('file_list_modified', files => {
     const bundleFile = {
       path: '/concatjs_bundle.js',
-      contentPath: tmpFile.name,
+      contentPath: tmpFile,
       isUrl: false,
       content: '',
       encodings: {},
@@ -55,17 +54,31 @@ function initConcatJs(logger, emitter, basePath, hostname, port) {
     // global variables, even with 'use strict'; (unlike eval).
     bundleFile.content = `
 (function() {  // Hide local variables
+  // Use policy to support Trusted Types enforcement.
+  var policy = null;
+  if (window.trustedTypes) {
+    try {
+      policy = window.trustedTypes.createPolicy('bazel-karma', {
+        createScript: function(s) { return s; }
+      });
+    } catch (e) {
+      // In case the policy has been unexpectedly created before, log the error
+      // and fall back to the old behavior.
+      console.log(e);
+    }
+  }
   // IE 8 and below do not support document.head.
   var parent = document.getElementsByTagName('head')[0] ||
                     document.documentElement;
   function loadFile(path, src) {
+    var trustedSrc = policy ? policy.createScript(src) : src;
     try {
       var script = document.createElement('script');
       if ('textContent' in script) {
-        script.textContent = src;
+        script.textContent = trustedSrc;
       } else {
         // This is for IE 8 and below.
-        script.text = src;
+        script.text = trustedSrc;
       }
       parent.appendChild(script);
       // Don't pollute the DOM with hundreds of <script> tags.

@@ -64,10 +64,10 @@ genrule(
     name = "generate_README",
     srcs = [
         "index.md",
-        "install.md",
+        "_README.md",
     ],
     outs = ["README.md"],
-    cmd = """cat $(execpath install.md) $(execpath index.md) | sed 's/^##/\\\n##/' > $@""",
+    cmd = """cat $(execpath _README.md) $(execpath index.md) | sed 's/^##/\\\n##/' > $@""",
     tags = ["fix-windows"],
     visibility = ["//docs:__pkg__"],
 )
@@ -100,6 +100,7 @@ pkg_npm(
         ":npm_version_check",
         "//packages/typescript/internal:BUILD",
         "//packages/typescript/internal:ts_project_options_validator.js",
+        "//packages/typescript/internal/worker",
     ] + select({
         # FIXME: fix stardoc on Windows; //packages/typescript:index.md generation fails with:
         #   ERROR: D:/b/62unjjin/external/npm_bazel_typescript/BUILD.bazel:36:1: Couldn't build file

@@ -1,26 +1,26 @@
 #[[##]]# ${funcInfo.functionName}
 
+**USAGE**
+
+<pre>
+${util.funcSummary($funcInfo)}
+</pre>
+
 $funcInfo.docString
 
-#[[###]]# Usage
-
-```
-${funcInfo.functionName}(#foreach( $param in $funcInfo.getParameterList() )$param.name#if( $foreach.hasNext ), #end#end)
-```
+**PARAMETERS**
 
 #if (!$funcInfo.getParameterList().isEmpty())
 #foreach ($param in $funcInfo.getParameterList())
 
-#[[####]]# `${param.name}`
-      
+<h4 id="${funcInfo.functionName}-${param.name}">${param.name}</h4>
+
 #if (!$param.docString.isEmpty())
-${param.docString.trim()}
+${util.htmlEscape($param.docString.trim())}
 #end
 
-#if(!$param.getDefaultValue().isEmpty())
-Defaults to `$param.getDefaultValue()`
-#end
+#if( !$param.defaultValue.isEmpty() )
+Defaults to `$param.defaultValue`#end
 
 #end
-
 #end

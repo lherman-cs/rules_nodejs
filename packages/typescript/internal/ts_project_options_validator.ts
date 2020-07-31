@@ -1,3 +1,4 @@
+import {relative} from 'path';
 import * as ts from 'typescript';
 
 const diagnosticsHost: ts.FormatDiagnosticsHost = {
@@ -29,23 +30,48 @@ function main([tsconfigPath, output, target, attrsStr]: string[]): 0|1 {
 
   const failures: string[] = [];
   const buildozerCmds: string[] = [];
+
+  function getTsOption(option) {
+    if (typeof (options[option]) === 'string') {
+      // Currently the only string-typed options are filepaths.
+      // TypeScript will resolve these to a project path
+      // so when echoing that back to the user, we need to reverse that resolution.
+      // First turn //path/to/pkg:tsconfig into path/to/pkg
+      const packageDir = target.substr(2, target.indexOf(':') - 2);
+      return relative(packageDir, options[option] as string);
+    }
+    return options[option];
+  }
+
   function check(option: string, attr?: string) {
     attr = attr || option;
     // treat compilerOptions undefined as false
-    const optionVal = options[option] === undefined ? false : options[option];
-    if (optionVal !== attrs[attr]) {
+    const optionVal = getTsOption(option);
+    const match = optionVal === attrs[attr] ||
+        (optionVal === undefined && (attrs[attr] === false || attrs[attr] === ''));
+    if (!match) {
       failures.push(
           `attribute ${attr}=${attrs[attr]} does not match compilerOptions.${option}=${optionVal}`);
-      buildozerCmds.push(`set ${attr} ${optionVal ? 'True' : 'False'}`);
+      if (typeof (optionVal) === 'boolean') {
+        buildozerCmds.push(`set ${attr} ${optionVal ? 'True' : 'False'}`);
+      } else if (typeof (optionVal) === 'string') {
+        buildozerCmds.push(`set ${attr} \"${optionVal}\"`);
+      } else if (optionVal === undefined) {
+        // nothing to sync
+      } else {
+        throw new Error(`cannot check option ${option} of type ${typeof (option)}`);
+      }
     }
   }
 
+  check('allowJs', 'allow_js');
   check('declarationMap', 'declaration_map');
   check('emitDeclarationOnly', 'emit_declaration_only');
   check('sourceMap', 'source_map');
   check('composite');
   check('declaration');
   check('incremental');
+  check('tsBuildInfoFile', 'ts_build_info_file');
 
   if (failures.length > 0) {
     console.error(`ERROR: ts_project rule ${
@@ -64,12 +90,14 @@ function main([tsconfigPath, output, target, attrsStr]: string[]): 0|1 {
   require('fs').writeFileSync(
       output, `
 // ${process.argv[1]} checked attributes for ${target}
+// allow_js:              ${attrs.allow_js}
 // composite:             ${attrs.composite}
 // declaration:           ${attrs.declaration}
 // declaration_map:       ${attrs.declaration_map}
 // incremental:           ${attrs.incremental}
 // source_map:            ${attrs.source_map}
 // emit_declaration_only: ${attrs.emit_declaration_only}
+// ts_build_info_file:    ${attrs.ts_build_info_file}
 `,
       'utf-8');
   return 0;

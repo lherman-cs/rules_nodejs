@@ -1,0 +1,37 @@
+load("//:index.bzl", "generated_file_test")
+load("//packages/esbuild:index.bzl", "esbuild")
+load("//packages/typescript:index.bzl", "ts_library")
+
+exports_files(["tsconfig.json"])
+
+ts_library(
+    name = "main",
+    srcs = [":main.ts"],
+    tsconfig = ":tsconfig.json",
+    deps = [
+        "//packages/esbuild/test/typescript/module-dynamic",
+        "//packages/esbuild/test/typescript/module-one",
+        "//packages/esbuild/test/typescript/module-two",
+        "@npm//tslib",
+    ],
+)
+
+esbuild(
+    name = "bundle",
+    entry_point = "main.ts",
+    format = "esm",
+    deps = [":main"],
+)
+
+genrule(
+    name = "strip_bundle_comments",
+    srcs = ["bundle.js"],
+    outs = ["bundle.stripped.js"],
+    cmd = "cat $(location :bundle.js) | sed \"s#// .*/bin/#// #\" > $@",
+)
+
+generated_file_test(
+    name = "bundle_test",
+    src = "bundle.golden.txt",
+    generated = ":bundle.stripped.js",
+)

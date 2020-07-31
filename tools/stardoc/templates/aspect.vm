@@ -1,19 +1,33 @@
 #[[##]]# ${aspectName}
 
-#[[###]]# Usage
+**USAGE**
 
-```
-$aspectName(#foreach( $attr in $aspectInfo.getAttributeList() )$attr.name#if( $foreach.hasNext ), #end#end)
-```
+<pre>
+${util.aspectSummary($aspectName, $aspectInfo)}
+</pre>
+
+$aspectInfo.getDocString()
+
+**ASPECT ATTRIBUTES**
+
+#if (!$aspectInfo.getAttributeList().isEmpty())
+#foreach ($aspectAttribute in $aspectInfo.getAspectAttributeList())
+<h4>${aspectAttribute}</h4>
+#end
+#end
+
+**ATTRIBUTES**
 
 #if (!$aspectInfo.getAttributeList().isEmpty())
 #foreach ($attribute in $aspectInfo.getAttributeList())
+<h4 id="${aspectName}-${attribute.name}">${attribute.name}</h4>
 
-#[[####]]# `${attribute.name}`
-(*#if ($attribute.type == "NAME")[name]#elseif( $attribute.type == "LABEL" )[label]#elseif( $attribute.type == "LABEL_LIST" )[labels]#else${util.attributeTypeString($attribute)}#end#if( $attribute.mandatory ), mandatory#end*)#if (!$attribute.docString.isEmpty()): ${attribute.docString.trim()}#end
+(*${util.attributeTypeString($attribute)}, {util.mandatoryString($attribute)}*)
+#if(!$attribute.docString.isEmpty()) $attribute.docString.trim() #else - #end
+
 #if( !$attribute.defaultValue.isEmpty() )
+Defaults to `$attribute.defaultValue`
+#end
 
-
-Defaults to `$attribute.defaultValue`#end
 #end
 #end

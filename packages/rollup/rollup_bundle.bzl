@@ -1,77 +1,24 @@
 "Rules for running Rollup under Bazel"
 
-load("@build_bazel_rules_nodejs//:providers.bzl", "JSEcmaScriptModuleInfo", "JSModuleInfo", "NodeContextInfo", "NpmPackageInfo", "node_modules_aspect", "run_node")
+load("@build_bazel_rules_nodejs//:providers.bzl", "JSEcmaScriptModuleInfo", "JSModuleInfo", "NODE_CONTEXT_ATTRS", "NodeContextInfo", "NpmPackageInfo", "node_modules_aspect", "run_node")
 load("@build_bazel_rules_nodejs//internal/linker:link_node_modules.bzl", "module_mappings_aspect")
 
-_DOC = """Runs the Rollup.js CLI under Bazel.
+_DOC = "Runs the rollup.js CLI under Bazel."
 
-See https://rollupjs.org/guide/en/#command-line-reference
-
-Typical example:
-```python
-load("//packages/rollup:index.bzl", "rollup_bundle")
-
-rollup_bundle(
-    name = "bundle",
-    srcs = ["dependency.js"],
-    entry_point = "input.js",
-    config_file = "rollup.config.js",
-)
-```
-
-Note that the command-line options set by Bazel override what appears in the rollup config file.
-This means that typically a single `rollup.config.js` can contain settings for your whole repo,
-and multiple `rollup_bundle` rules can share the configuration.
-
-Thus, setting options that Bazel controls will have no effect, e.g.
-
-```javascript
-module.exports = {
-    output: { file: 'this_is_ignored.js' },
-}
-```
-
-You must determine ahead of time whether Rollup needs to produce a directory output.
-This is the case if you have dynamic imports which cause code-splitting, or if you
-provide multiple entry points. Use the `output_dir` attribute to specify that you want a
-directory output.
-Rollup's CLI has the same behavior, forcing you to pick `--output.file` or `--output.dir`.
-
-To get multiple output formats, wrap the rule with a macro or list comprehension, e.g.
-
-```python
-[
-    rollup_bundle(
-        name = "bundle.%s" % format,
-        entry_point = "foo.js",
-        format = format,
-    )
-    for format in [
-        "cjs",
-        "umd",
-    ]
-]
-```
-
-This will produce one output per requested format.
-"""
-
-_ROLLUP_ATTRS = {
+_ROLLUP_ATTRS = dict(NODE_CONTEXT_ATTRS, **{
     "args": attr.string_list(
-        doc = """Command line arguments to pass to rollup. Can be used to override config file settings.
+        doc = """Command line arguments to pass to Rollup. Can be used to override config file settings.
 
-These argument passed on the command line before all arguments that are always added by the
-rule such as `--output.dir` or `--output.file`, `--format`, `--config` and `--preserveSymlinks` and
-also those that are optionally added by the rule such as `--sourcemap`.
+These argument passed on the command line before arguments that are added by the rule.
+Run `bazel` with `--subcommands` to see what Rollup CLI command line was invoked.
 
-See rollup CLI docs https://rollupjs.org/guide/en/#command-line-flags for complete list of supported arguments.""",
+See the <a href="https://rollupjs.org/guide/en/#command-line-flags">Rollup CLI docs</a> for a complete list of supported arguments.""",
         default = [],
     ),
     "config_file": attr.label(
-        doc = """A rollup.config.js file
+        doc = """A `rollup.config.js` file
 
-Passed to the --config 
-See https://rollupjs.org/guide/en/#configuration-files
+Passed to the `--config` option, see [the config doc](https://rollupjs.org/guide/en/#configuration-files)
 
 If not set, a default basic Rollup config is used.
 """,
@@ -141,7 +88,7 @@ Either this attribute or `entry_point` must be specified, but not both.
         allow_files = True,
     ),
     "format": attr.string(
-        doc = """"Specifies the format of the generated bundle. One of the following:
+        doc = """Specifies the format of the generated bundle. One of the following:
 
 - `amd`: Asynchronous Module Definition, used with module loaders like RequireJS
 - `cjs`: CommonJS, suitable for Node and other bundlers
@@ -153,10 +100,9 @@ Either this attribute or `entry_point` must be specified, but not both.
         values = ["amd", "cjs", "esm", "iife", "umd", "system"],
         default = "esm",
     ),
-    "node_context_data": attr.label(
-        default = "@build_bazel_rules_nodejs//internal:node_context_data",
-        providers = [NodeContextInfo],
-        doc = "Internal use only",
+    "link_workspace_root": attr.bool(
+        doc = """Link the workspace root to the bin_dir to support absolute requires like 'my_wksp/path/to/file'.
+If source files need to be required then they can be copied to the bin_dir with copy_to_bin.""",
     ),
     "output_dir": attr.bool(
         doc = """Whether to produce a directory output.
@@ -217,7 +163,7 @@ When enabled, this rule invokes the "rollup_worker_bin"
 worker aware binary rather than "rollup_bin".""",
         default = False,
     ),
-}
+})
 
 def _desugar_entry_point_names(name, entry_point, entry_points):
     """Users can specify entry_point (sugar) or entry_points (long form).
@@ -361,7 +307,11 @@ def _rollup_bundle(ctx):
         template = ctx.file.config_file,
         output = config,
         substitutions = {
+            "bazel_info_file": "\"%s\"" % ctx.info_file.path if stamp else "undefined",
+            # Back-compat: we used to replace a variable "bazel_stamp_file"
+            # Remove in 3.0: https://github.com/bazelbuild/rules_nodejs/issues/2158
             "bazel_stamp_file": "\"%s\"" % ctx.version_file.path if stamp else "undefined",
+            "bazel_version_file": "\"%s\"" % ctx.version_file.path if stamp else "undefined",
         },
     )
 
@@ -369,6 +319,7 @@ def _rollup_bundle(ctx):
     inputs.append(config)
 
     if stamp:
+        inputs.append(ctx.info_file)
         inputs.append(ctx.version_file)
 
     # Prevent rollup's module resolver from hopping outside Bazel's sandbox
@@ -397,6 +348,7 @@ def _rollup_bundle(ctx):
         mnemonic = "Rollup",
         execution_requirements = execution_requirements,
         env = {"COMPILATION_MODE": ctx.var["COMPILATION_MODE"]},
+        link_workspace_root = ctx.attr.link_workspace_root,
     )
 
     outputs_depset = depset(outputs)
