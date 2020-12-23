@@ -55,7 +55,7 @@ def pkg_npm(**kwargs):
         "0.0.0-PLACEHOLDER": "{STABLE_BUILD_SCM_VERSION}",
     })
 
-    # Finally call through to the rule with our defaults set
+    # Call through to the rule with our defaults set
     _pkg_npm(
         deps = deps,
         substitutions = select({
@@ -64,6 +64,18 @@ def pkg_npm(**kwargs):
         }),
         visibility = visibility,
         **kwargs
+    )
+
+    # create a tar that can be used in an action, consumed by the examples
+    # tagged as manual so this doesn't case two actions for each input with builds for "host" (as used as a tool)
+    name = kwargs.get("name")
+    native.genrule(
+        name = "%s.tar" % name,
+        outs = ["%s.tgz" % pkg],
+        cmd = "$(location :%s.pack) | xargs -I {} cp {} $@" % name,
+        tools = [":%s.pack" % name],
+        tags = ["manual"],
+        visibility = visibility,
     )
 
 _GLOBAL_OWNERS = [

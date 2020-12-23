@@ -1090,4 +1090,16 @@ NODE_VERSIONS = {
     "14.15.3-linux_s390x": ("node-v14.15.3-linux-s390x.tar.xz", "node-v14.15.3-linux-s390x", "eb976b0d14cc629be3b1d03516ec5516c27d3655f84f11d23af15f4f83d34e27"),
     "14.15.3-linux_amd64": ("node-v14.15.3-linux-x64.tar.xz", "node-v14.15.3-linux-x64", "6715ecd8b5ab626b4de8454bd0da629a6194bf8f25db71545da64b78b95e4350"),
     "14.15.3-windows_amd64": ("node-v14.15.3-win-x64.zip", "node-v14.15.3-win-x64", "621de473d22debc0ab1e9a336dc2112d6efca7f7daa769018153e4309e6da844"),
+    # 15.0.0
+    "15.0.0-darwin_amd64": ("node-v15.0.0-darwin-x64.tar.gz", "node-v15.0.0-darwin-x64", "f9eee1f659d96991bc629ec1cec986f504242fc0f046f4487d2fe13b9ab37c99"),
+    "15.0.0-linux_arm64": ("node-v15.0.0-linux-arm64.tar.xz", "node-v15.0.0-linux-arm64", "52aba1b117499680adea5fec43083fcb94a3483eda182ea82ca47f5d7c9eec97"),
+    "15.0.0-linux_s390x": ("node-v15.0.0-linux-s390x.tar.xz", "node-v15.0.0-linux-s390x", "7c916b1f3729a66701a0fc0ffe0afde05e401ccc3c53e7114db37cfbf4604f27"),
+    "15.0.0-linux_amd64": ("node-v15.0.0-linux-x64.tar.xz", "node-v15.0.0-linux-x64", "054c1c20ee237614e12ee2baab1ec96bfafc835a2d36fb2b860fdf10be0777b0"),
+    "15.0.0-windows_amd64": ("node-v15.0.0-win-x64.zip", "node-v15.0.0-win-x64", "fe8358e18a1f5a44849420d9d76c755e7489f92e0933c8d780107cd688e1d3d6"),
+    # 15.0.1
+    "15.0.1-darwin_amd64": ("node-v15.0.1-darwin-x64.tar.gz", "node-v15.0.1-darwin-x64", "8f7e2ddd44d2aef20d568489f2cf844383037725ce2fc04ad722a312ef08b2d0"),
+    "15.0.1-linux_arm64": ("node-v15.0.1-linux-arm64.tar.xz", "node-v15.0.1-linux-arm64", "403571f7e37dfefd7bd46411fff4ec7d81bf3d1a34feb37939ad35a06e61d855"),
+    "15.0.1-linux_s390x": ("node-v15.0.1-linux-s390x.tar.xz", "node-v15.0.1-linux-s390x", "537fec4b3e2c06459991d25641da83533fee551575326b36d54e44364a10678a"),
+    "15.0.1-linux_amd64": ("node-v15.0.1-linux-x64.tar.xz", "node-v15.0.1-linux-x64", "cc9c3eed21755b490e5333ccab208ce15b539c35f64a764eeeae77c58746a7ff"),
+    "15.0.1-windows_amd64": ("node-v15.0.1-win-x64.zip", "node-v15.0.1-win-x64", "efa7a74d91789a6e9f068f375e49f108ff87578fd88ff4b4e7fefd930c04db6c"),
 }
